@@ -41,6 +41,8 @@ const client = new Client({
 
 // Register slash commands
 const commands = [
+  new SlashCommandBuilder().setName("put").setDescription("Create staff team"),
+  new SlashCommandBuilder().setName("update").setDescription("Update staff team"),
   new SlashCommandBuilder().setName("roulette").setDescription("Ban a random staff member"),
   new SlashCommandBuilder().setName("fakeroulette").setDescription("Fake ban a staff member"),
   new SlashCommandBuilder().setName("kickroulette").setDescription("Kick a random staff member"),
@@ -145,10 +147,22 @@ client.on("interactionCreate", async interaction => {
 
   await interaction.guild.members.fetch();
   const staffMembers = interaction.guild.members.cache.filter(m => getHighestStaff(m));
-  if (!staffMembers.size) return interaction.reply({ content: "❌ No staff members found", ephemeral: true });
+  const channel = interaction.channel; // Send roulette results here
+  const staffChannel = interaction.guild.channels.cache.get(STAFF_CHANNEL_ID); // Staff table channel
 
-  const channel = interaction.guild.channels.cache.get(STAFF_CHANNEL_ID);
-  if (!channel) return interaction.reply({ content: "❌ Staff channel not found", ephemeral: true });
+  if (!staffMembers.size && interaction.commandName !== "put" && interaction.commandName !== "update") 
+    return interaction.reply({ content: "❌ No staff members found", ephemeral: true });
+
+  // STAFF TABLE COMMANDS
+  if (interaction.commandName === "put" || interaction.commandName === "update") {
+    if (!staffChannel) return interaction.reply({ content: "Staff channel not found", ephemeral: true });
+    const embed = buildEmbed(interaction.guild);
+    const msgs = await staffChannel.messages.fetch({ limit: 10 });
+    const old = msgs.find(m => m.author.id === client.user.id);
+    if (old) await old.edit({ embeds: [embed] });
+    else await staffChannel.send({ embeds: [embed] });
+    return interaction.reply({ content: "✅ Staff table updated!", ephemeral: true });
+  }
 
   // /roulette
   if (interaction.commandName === "roulette") {
@@ -252,19 +266,12 @@ client.on("interactionCreate", async interaction => {
     const { player1, player2, loser } = await duelMembers([...staffMembers.values()]);
     const embed = new EmbedBuilder()
       .setTitle("⚔️ Duel Roulette")
-      .setDescription(`🎮 ${player1} vs ${player2}\n💀 <@${loser.id}> lost and got muted for 5 min!`)
+      .setDescription(`🎮 <@${player1.id}> vs <@${player2.id}>\n💀 <@${loser.id}> lost and got muted for 5 min!`)
       .setColor(0xffaa00)
       .setTimestamp();
     await channel.send({ embeds: [embed] });
     return interaction.reply({ content: "✅ Duel roulette ran!", ephemeral: true });
   }
-
-  // Update staff table
-  const embed = buildEmbed(interaction.guild);
-  const msgs = await channel.messages.fetch({ limit: 10 });
-  const old = msgs.find(m => m.author.id === client.user.id);
-  if (old) await old.edit({ embeds: [embed] });
-  else await channel.send({ embeds: [embed] });
 });
 
 client.login(TOKEN);
