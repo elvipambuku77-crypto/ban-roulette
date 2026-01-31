@@ -3,7 +3,8 @@ const {
   GatewayIntentBits, 
   SlashCommandBuilder, 
   REST, 
-  Routes 
+  Routes, 
+  PermissionFlagsBits 
 } = require("discord.js");
 
 const client = new Client({
@@ -13,33 +14,34 @@ const client = new Client({
   ]
 });
 
-const TOKEN = process.env.TOKEN;
-const STAFF_ROLE_ID = process.env.STAFF_ROLE_ID;
+const STAFF_KEYWORDS = [
+  "help",
+  "mod",
+  "admin",
+  "manager",
+  "head",
+  "co",
+  "owner",
+  "founder"
+];
 
-/* ---------- REGISTER COMMAND ---------- */
-const commands = [
-  new SlashCommandBuilder()
-    .setName("roulette")
-    .setDescription("🎰 Ban roulette… a random staff member gets cooked 💀")
-].map(cmd => cmd.toJSON());
-
-const rest = new REST({ version: "10" }).setToken(TOKEN);
+const command = new SlashCommandBuilder()
+  .setName("roulette")
+  .setDescription("🎰 Ban a random staff member (RISKY)");
 
 client.once("ready", async () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
 
-  try {
-    await rest.put(
-      Routes.applicationCommands(client.user.id),
-      { body: commands }
-    );
-    console.log("✅ Slash command registered");
-  } catch (err) {
-    console.error(err);
-  }
+  const rest = new REST({ version: "10" }).setToken(process.env.TOKEN);
+
+  await rest.put(
+    Routes.applicationCommands(process.env.CLIENT_ID),
+    { body: [command.toJSON()] }
+  );
+
+  console.log("✅ Slash command registered");
 });
 
-/* ---------- COMMAND LOGIC ---------- */
 client.on("interactionCreate", async interaction => {
   if (!interaction.isChatInputCommand()) return;
   if (interaction.commandName !== "roulette") return;
@@ -47,42 +49,49 @@ client.on("interactionCreate", async interaction => {
   await interaction.deferReply();
 
   const guild = interaction.guild;
-
-  // Fetch ALL members properly
   await guild.members.fetch();
 
-  const staffRole = guild.roles.cache.get(STAFF_ROLE_ID);
-  if (!staffRole) {
-    return interaction.editReply("❌ Staff role not found 💀");
+  // 1️⃣ Find staff roles by NAME
+  const staffRoles = guild.roles.cache.filter(role =>
+    STAFF_KEYWORDS.some(keyword =>
+      role.name.toLowerCase().includes(keyword)
+    )
+  );
+
+  if (staffRoles.size === 0) {
+    return interaction.editReply("❌ No staff roles detected.");
   }
 
-  // Get staff members (NO BOTS)
-  const staffMembers = staffRole.members.filter(m => !m.user.bot);
+  // 2️⃣ Get members with those roles
+  const staffMembers = guild.members.cache.filter(member =>
+    member.roles.cache.some(role => staffRoles.has(role.id)) &&
+    member.bannable &&
+    !member.user.bot
+  );
 
   if (staffMembers.size === 0) {
-    return interaction.editReply("😭 No staff members found… everyone escaped.");
+    return interaction.editReply("❌ No bannable staff members found.");
   }
 
-  // Pick random victim
+  // 3️⃣ Pick random victim
   const victim = staffMembers.random();
 
-  // Try banning
-  try {
-    await victim.ban({ reason: "🎰 Ban Roulette — unlucky spin 💀" });
+  // 4️⃣ Funny messages
+  const messages = [
+    `🎰 **BAN ROULETTE SPINNING...**`,
+    `💀 The wheel stopped.`,
+    `😈 **${victim.user.tag}** got absolutely COOKED.`,
+    `🪦 Rest in peace.`,
+    `🔥 Better luck next server.`
+  ];
 
-    await interaction.editReply(
-      `🎰 **BAN ROULETTE SPINNING...**\n\n` +
-      `💥 **BOOM!**\n` +
-      `😈 **${victim.user.tag}** just got **SMOKED**\n\n` +
-      `🪦 Rest in peace + ratio`
-    );
-  } catch (err) {
-    console.error(err);
-    interaction.editReply(
-      `❌ I tried banning **${victim.user.tag}** but failed 😭\n` +
-      `Probably higher role than me or missing perms 💀`
-    );
-  }
+  // 5️⃣ Ban
+  await victim.ban({ reason: "🎰 Ban Roulette" });
+
+  // 6️⃣ Reply
+  await interaction.editReply(
+    `${messages.join("\n")}\n\n💥 **BANNED:** ${victim.user}`
+  );
 });
 
-client.login(TOKEN);
+client.login(process.env.TOKEN);
