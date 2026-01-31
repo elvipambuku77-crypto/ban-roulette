@@ -1,19 +1,10 @@
-const {
-  Client,
-  GatewayIntentBits,
-  SlashCommandBuilder,
-  REST,
-  Routes,
-  EmbedBuilder
-} = require("discord.js");
+const { Client, GatewayIntentBits, SlashCommandBuilder, REST, Routes, EmbedBuilder } = require("discord.js");
 
 const TOKEN = process.env.TOKEN;
 const CLIENT_ID = process.env.CLIENT_ID;
 const GUILD_ID = process.env.GUILD_ID;
 
-const STAFF_CHANNEL_ID = "1427692088614719628";
-
-// Allowed users
+// Allowed users who can run commands
 const ALLOWED_USERS = [
   "1289624661079883791",
   "1387888341109833906",
@@ -22,10 +13,10 @@ const ALLOWED_USERS = [
   "1348065997231489066"
 ];
 
-// Staff role mapping
+// Staff role mapping for detection
 const ROLE_MAP = [
   { key: "main founder", label: "👑 Main Founder" },
-  { key: "co founder", label: "💜 Founder" },
+  { key: "co founder", label: "💜 Co Founder" },
   { key: "own┇", label: "🖤 Owner" },
   { key: "co┇", label: "💙 Co Owner" },
   { key: "hos┇", label: "🔥 Head of Staff" },
@@ -41,11 +32,9 @@ const client = new Client({
 
 // Register slash commands
 const commands = [
-  new SlashCommandBuilder().setName("put").setDescription("Create staff team"),
-  new SlashCommandBuilder().setName("update").setDescription("Update staff team"),
   new SlashCommandBuilder().setName("roulette").setDescription("Ban a random staff member"),
   new SlashCommandBuilder().setName("punishroulette").setDescription("Randomly punish a staff member"),
-  new SlashCommandBuilder().setName("duelroulette").setDescription("Random 1v1 duel")
+  new SlashCommandBuilder().setName("duelroulette").setDescription("Random 1v1 duel between staff")
 ].map(c => c.toJSON());
 
 const rest = new REST({ version: "10" }).setToken(TOKEN);
@@ -53,7 +42,7 @@ const rest = new REST({ version: "10" }).setToken(TOKEN);
   await rest.put(Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID), { body: commands });
 })();
 
-// Get highest staff role
+// Get highest staff role of a member
 function getHighestStaff(member) {
   for (const roleDef of ROLE_MAP) {
     const role = member.roles.cache.find(r => r.name.toLowerCase().includes(roleDef.key));
@@ -62,40 +51,12 @@ function getHighestStaff(member) {
   return null;
 }
 
-// Build staff embed
-function buildEmbed(guild) {
-  const embed = new EmbedBuilder()
-    .setTitle("📜 Staff Team")
-    .setColor(0x5865f2)
-    .setTimestamp();
-
-  ROLE_MAP.forEach(roleDef => {
-    const role = guild.roles.cache.find(r => r.name.toLowerCase().includes(roleDef.key));
-    if (!role) return;
-
-    const members = guild.members.cache.filter(m => {
-      const highest = getHighestStaff(m);
-      return highest && highest.key === roleDef.key;
-    });
-
-    if (!members.size) return;
-
-    embed.addFields({
-      name: `${roleDef.label} — ${role.name}`,
-      value: members.map(m => `• <@${m.id}>`).join("\n"),
-      inline: false
-    });
-  });
-
-  return embed;
-}
-
-// Random helper functions
+// Random helper
 function getRandom(array) {
   return array[Math.floor(Math.random() * array.length)];
 }
 
-// BAN ROULETTE FUNNY MESSAGES
+// Funny messages
 const banMessages = [
   `💀 <@{victim}> got yeeted into the void!`,
   `🎰 Spin complete! <@{victim}> didn’t survive the spin!`,
@@ -112,7 +73,6 @@ const banMessages = [
   `🥳 Party time! <@{victim}> got kicked but the party continues!`
 ];
 
-// PUNISH ROULETTE FUNNY MESSAGES
 const punishMessages = [
   `⏱ Timed out 5 min! <@{victim}> now has time to rethink life choices!`,
   `📝 Nickname changed! <@{victim}> is now 🤡 Punished!`,
@@ -128,40 +88,26 @@ const punishMessages = [
   `🤡 Clown alert! <@{victim}> is now the main circus act!`
 ];
 
-// Punish roulette
+// Punish a member
 async function punishMember(victim, executor, guild) {
   const punishments = [
-    async () => { 
-      await victim.timeout(5 * 60 * 1000, "Punish Roulette"); 
-      return getRandom(punishMessages).replace("{victim}", victim.id);
-    },
-    async () => { 
-      const oldName = victim.displayName;
-      await victim.setNickname(`🤡 Punished`); 
-      return `📝 Nickname changed from **${oldName}** to 🤡 Punished!`;
-    },
-    async () => { 
-      const afkRole = guild.roles.cache.find(r => r.name.toLowerCase().includes("afk")); 
-      if (afkRole) await victim.roles.add(afkRole); 
-      return `🛡 Moved to AFK by <@${executor.id}>`;
-    },
+    async () => { await victim.timeout(5 * 60 * 1000, "Punish Roulette"); return getRandom(punishMessages).replace("{victim}", victim.id); },
+    async () => { const oldName = victim.displayName; await victim.setNickname(`🤡 Punished`); return `📝 Nickname changed from **${oldName}** to 🤡 Punished!`; },
+    async () => { const afkRole = guild.roles.cache.find(r => r.name.toLowerCase().includes("afk")); if (afkRole) await victim.roles.add(afkRole); return `🛡 Moved to AFK by <@${executor.id}>`; },
     async () => `⚡ Lucky! <@${executor.id}> spared <@${victim.id}>`
   ];
-
   const action = getRandom(punishments);
-  const result = await action();
-  return result;
+  return await action();
 }
 
-// Duel roulette
+// Duel two random staff
 async function duelMembers(staffMembers) {
   const [player1, player2] = getRandomTwo(staffMembers);
   const loser = getRandom([player1, player2]);
-  await loser.timeout(5 * 60 * 1000, "Duel Roulette"); // Mute loser 5 min
+  await loser.timeout(5 * 60 * 1000, "Duel Roulette"); // mute loser
   return { player1, player2, loser };
 }
 
-// Helper: pick 2 random members
 function getRandomTwo(members) {
   const shuffled = [...members].sort(() => 0.5 - Math.random());
   return shuffled.slice(0, 2);
@@ -170,29 +116,15 @@ function getRandomTwo(members) {
 // Handle commands
 client.on("interactionCreate", async interaction => {
   if (!interaction.isChatInputCommand()) return;
-  if (!ALLOWED_USERS.includes(interaction.user.id)) 
-    return interaction.reply({ content: "❌ You are not authorized.", ephemeral: true });
+  if (!ALLOWED_USERS.includes(interaction.user.id)) return interaction.reply({ content: "❌ You are not authorized.", ephemeral: true });
 
   await interaction.guild.members.fetch();
   const staffMembers = interaction.guild.members.cache.filter(m => getHighestStaff(m));
-  const channel = interaction.channel; // Send roulette results here
-  const staffChannel = interaction.guild.channels.cache.get(STAFF_CHANNEL_ID);
+  const channel = interaction.channel;
 
-  if (!staffMembers.size && !["put","update"].includes(interaction.commandName))
-    return interaction.reply({ content: "❌ No staff members found", ephemeral: true });
+  if (!staffMembers.size) return interaction.reply({ content: "❌ No staff members found", ephemeral: true });
 
-  // STAFF TABLE
-  if (["put","update"].includes(interaction.commandName)) {
-    if (!staffChannel) return interaction.reply({ content: "Staff channel not found", ephemeral: true });
-    const embed = buildEmbed(interaction.guild);
-    const msgs = await staffChannel.messages.fetch({ limit: 10 });
-    const old = msgs.find(m => m.author.id === client.user.id);
-    if (old) await old.edit({ embeds: [embed] });
-    else await staffChannel.send({ embeds: [embed] });
-    return interaction.reply({ content: "✅ Staff table updated!", ephemeral: true });
-  }
-
-  // /roulette ban
+  // /roulette - ban a random staff
   if (interaction.commandName === "roulette") {
     const victim = getRandom([...staffMembers.values()]);
     const embed = new EmbedBuilder()
@@ -205,7 +137,7 @@ client.on("interactionCreate", async interaction => {
     return interaction.reply({ content: `✅ Ban roulette executed by <@${interaction.user.id}>!`, ephemeral: true });
   }
 
-  // /punishroulette
+  // /punishroulette - punish staff
   if (interaction.commandName === "punishroulette") {
     const victim = getRandom([...staffMembers.values()]);
     const result = await punishMember(victim, interaction.user, interaction.guild);
@@ -218,7 +150,7 @@ client.on("interactionCreate", async interaction => {
     return interaction.reply({ content: `✅ Punish roulette ran by <@${interaction.user.id}>!`, ephemeral: true });
   }
 
-  // /duelroulette
+  // /duelroulette - duel staff
   if (interaction.commandName === "duelroulette") {
     const { player1, player2, loser } = await duelMembers([...staffMembers.values()]);
     const embed = new EmbedBuilder()
