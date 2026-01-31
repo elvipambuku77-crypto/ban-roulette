@@ -21,7 +21,8 @@ const ALLOWED_USERS = [
   "1289624661079883791",
   "1387888341109833906",
   "1171474569299755158",
-  "1388979737174478940"
+  "1388979737174478940",
+  "1348065997231489066"
 ];
 
 /* =========================
@@ -42,22 +43,36 @@ const STAFF_KEYWORDS = [
    😂 FUNNY VERDICTS
    ========================= */
 const FUNNY_MESSAGES = [
-  "💀 Wheel decided your fate",
-  "😭 Shouldn’t have logged in today",
-  "🧳 Bro got promoted to exile",
-  "🚪 Escorting you out respectfully",
-  "🫡 Thank you for your service… goodbye",
-  "🎯 RNG said YOU",
+  "💀 RNG said it’s over",
+  "😭 Logged in just to lose it all",
+  "🎯 Perfect unlucky timing",
   "📉 Career ended instantly",
-  "💣 Critical hit. Server wins."
+  "🚪 Kindly escorted out",
+  "🧳 Promotion to ex-member",
+  "💣 Massive L detected"
+];
+
+const FAKE_MESSAGES = [
+  "😳 Heart attack avoided",
+  "🧠 Almost banned but luck clutched",
+  "😮‍💨 That was TOO close",
+  "🎭 Plot twist: FAKE SPIN",
+  "🛡 Protected by plot armor",
+  "😂 Chat was ready to mourn"
 ];
 
 /* =========================
-   🎰 SLASH COMMAND
+   🎰 COMMANDS
    ========================= */
-const command = new SlashCommandBuilder()
-  .setName("roulette")
-  .setDescription("🎰 Spin the wheel and ban a random staff member");
+const commands = [
+  new SlashCommandBuilder()
+    .setName("roulette")
+    .setDescription("🎰 REAL ban roulette (dangerous)"),
+
+  new SlashCommandBuilder()
+    .setName("fakeroulette")
+    .setDescription("🎭 FAKE roulette (no ban)")
+];
 
 client.once("ready", async () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
@@ -66,10 +81,10 @@ client.once("ready", async () => {
 
   await rest.put(
     Routes.applicationCommands(process.env.CLIENT_ID),
-    { body: [command.toJSON()] }
+    { body: commands.map(c => c.toJSON()) }
   );
 
-  console.log("✅ /roulette registered");
+  console.log("✅ Commands registered");
 });
 
 /* =========================
@@ -77,12 +92,11 @@ client.once("ready", async () => {
    ========================= */
 client.on("interactionCreate", async interaction => {
   if (!interaction.isChatInputCommand()) return;
-  if (interaction.commandName !== "roulette") return;
 
   /* 🔐 ACCESS CHECK */
   if (!ALLOWED_USERS.includes(interaction.user.id)) {
     return interaction.reply({
-      content: "⛔ You are NOT authorized to spin the wheel.",
+      content: "⛔ You are NOT allowed to use this command.",
       ephemeral: true
     });
   }
@@ -92,7 +106,6 @@ client.on("interactionCreate", async interaction => {
   const guild = interaction.guild;
   await guild.members.fetch();
 
-  /* 👔 STAFF ROLES */
   const staffRoles = guild.roles.cache.filter(role =>
     STAFF_KEYWORDS.some(k =>
       role.name.toLowerCase().includes(k)
@@ -103,39 +116,72 @@ client.on("interactionCreate", async interaction => {
     return interaction.editReply("❌ No staff roles detected.");
   }
 
-  /* 👤 STAFF MEMBERS */
   const staffMembers = guild.members.cache.filter(member =>
     member.roles.cache.some(r => staffRoles.has(r.id)) &&
-    member.bannable &&
     !member.user.bot
   );
 
   if (!staffMembers.size) {
-    return interaction.editReply("❌ No bannable staff members found.");
+    return interaction.editReply("❌ No staff members found.");
   }
 
-  /* 🎲 RANDOM PICK */
   const victim = staffMembers.random();
+
+  /* =========================
+     🎭 FAKE ROULETTE
+     ========================= */
+  if (interaction.commandName === "fakeroulette") {
+    const fakeVerdict =
+      FAKE_MESSAGES[Math.floor(Math.random() * FAKE_MESSAGES.length)];
+
+    const fakeEmbed = new EmbedBuilder()
+      .setColor(0x5865F2)
+      .setAuthor({
+        name: "FAKE BAN ROULETTE",
+        iconURL: guild.iconURL()
+      })
+      .setThumbnail(victim.user.displayAvatarURL({ dynamic: true }))
+      .setDescription("🎭 **The wheel is spinning...**")
+      .addFields(
+        { name: "👤 Selected", value: `${victim.user}`, inline: true },
+        { name: "🛡 Role", value: victim.roles.highest.name, inline: true },
+        { name: "⚠ Result", value: "NO BAN (FAKE MODE)", inline: true },
+        { name: "😂 Verdict", value: fakeVerdict }
+      )
+      .setFooter({
+        text: `Fake spin by ${interaction.user.username}`,
+        iconURL: interaction.user.displayAvatarURL()
+      })
+      .setTimestamp();
+
+    return interaction.editReply({ embeds: [fakeEmbed] });
+  }
+
+  /* =========================
+     🔨 REAL ROULETTE
+     ========================= */
+  if (!victim.bannable) {
+    return interaction.editReply("❌ Selected member cannot be banned.");
+  }
+
   const verdict =
     FUNNY_MESSAGES[Math.floor(Math.random() * FUNNY_MESSAGES.length)];
 
-  /* 🔨 BAN */
   await victim.ban({ reason: "🎰 Ban Roulette" });
 
-  /* 📦 STYLED EMBED */
-  const embed = new EmbedBuilder()
-    .setColor(0xFF3B3B)
+  const realEmbed = new EmbedBuilder()
+    .setColor(0xFF3131)
     .setAuthor({
       name: "BAN ROULETTE",
       iconURL: guild.iconURL()
     })
     .setThumbnail(victim.user.displayAvatarURL({ dynamic: true }))
-    .setDescription("🎰 **The wheel has spoken…**")
+    .setDescription("🎰 **The wheel has decided...**")
     .addFields(
       { name: "👤 Victim", value: `${victim.user}`, inline: true },
       { name: "🛡 Highest Role", value: victim.roles.highest.name, inline: true },
       { name: "🔨 Punishment", value: "PERMANENT BAN", inline: true },
-      { name: "😂 Verdict", value: verdict }
+      { name: "💀 Verdict", value: verdict }
     )
     .setFooter({
       text: `Spun by ${interaction.user.username}`,
@@ -143,7 +189,7 @@ client.on("interactionCreate", async interaction => {
     })
     .setTimestamp();
 
-  await interaction.editReply({ embeds: [embed] });
+  await interaction.editReply({ embeds: [realEmbed] });
 });
 
 client.login(process.env.TOKEN);
