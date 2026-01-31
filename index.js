@@ -44,13 +44,7 @@ const commands = [
   new SlashCommandBuilder().setName("put").setDescription("Create staff team"),
   new SlashCommandBuilder().setName("update").setDescription("Update staff team"),
   new SlashCommandBuilder().setName("roulette").setDescription("Ban a random staff member"),
-  new SlashCommandBuilder().setName("fakeroulette").setDescription("Fake ban a staff member"),
-  new SlashCommandBuilder().setName("kickroulette").setDescription("Kick a random staff member"),
   new SlashCommandBuilder().setName("punishroulette").setDescription("Randomly punish a staff member"),
-  new SlashCommandBuilder().setName("impostor").setDescription("Fake impostor alert"),
-  new SlashCommandBuilder().setName("luck").setDescription("Check your luck %"),
-  new SlashCommandBuilder().setName("godmode").setDescription("Make a user immune").addUserOption(opt => opt.setName("target").setDescription("Target user")),
-  new SlashCommandBuilder().setName("hallofshame").setDescription("Shows last punished staff"),
   new SlashCommandBuilder().setName("duelroulette").setDescription("Random 1v1 duel")
 ].map(c => c.toJSON());
 
@@ -101,24 +95,57 @@ function getRandom(array) {
   return array[Math.floor(Math.random() * array.length)];
 }
 
+// BAN ROULETTE FUNNY MESSAGES
+const banMessages = [
+  `💀 <@{victim}> got yeeted into the void!`,
+  `🎰 Spin complete! <@{victim}> didn’t survive the spin!`,
+  `🪓 Oops! <@{victim}> met the mighty ban hammer!`,
+  `⚡ Shocked! <@{victim}> got struck by bad luck!`,
+  `🚀 <@{victim}> has been launched into another dimension!`,
+  `🦖 Jurassic time! <@{victim}> got eaten by a T-Rex!`,
+  `🍕 Pizza delivery fail! <@{victim}> vanished into thin air!`,
+  `👻 Boo! <@{victim}> got spooked straight outta Discord!`,
+  `🥶 Cold as ice! <@{victim}> frozen by the Ban Gods!`,
+  `🧨 Boom! <@{victim}> exploded into confetti!`,
+  `🦄 Magical unicorn stomp! <@{victim}> didn't survive!`,
+  `🎩 Hat trick! <@{victim}> got a magic mute!`,
+  `🥳 Party time! <@{victim}> got kicked but the party continues!`
+];
+
+// PUNISH ROULETTE FUNNY MESSAGES
+const punishMessages = [
+  `⏱ Timed out 5 min! <@{victim}> now has time to rethink life choices!`,
+  `📝 Nickname changed! <@{victim}> is now 🤡 Punished!`,
+  `🛡 Moved to AFK! <@{victim}> go chill somewhere…`,
+  `🍌 Slipped on a banana! <@{victim}> narrowly escaped disaster…`,
+  `🐸 Frogged! <@{victim}> turned into a frog temporarily!`,
+  `🦄 Unicorn attack! <@{victim}> got magically punished!`,
+  `🍕 Pizza rage! <@{victim}> must now eat 5 imaginary pizzas!`,
+  `🎩 Hat trick! <@{victim}> got a magical hat — mute included!`,
+  `⚡ Shocked! <@{victim}> learns the meaning of chaos!`,
+  `🦖 Dinosaur stomp! <@{victim}> was slightly flattened… for 5 minutes!`,
+  `💥 Exploded into confetti! <@{victim}> regrets life choices!`,
+  `🤡 Clown alert! <@{victim}> is now the main circus act!`
+];
+
 // Punish roulette
-async function punishMember(victim, guild) {
+async function punishMember(victim, executor, guild) {
   const punishments = [
     async () => { 
       await victim.timeout(5 * 60 * 1000, "Punish Roulette"); 
-      return "⏱ Timed out 5 minutes"; 
+      return getRandom(punishMessages).replace("{victim}", victim.id);
+    },
+    async () => { 
+      const oldName = victim.displayName;
+      await victim.setNickname(`🤡 Punished`); 
+      return `📝 Nickname changed from **${oldName}** to 🤡 Punished!`;
     },
     async () => { 
       const afkRole = guild.roles.cache.find(r => r.name.toLowerCase().includes("afk")); 
       if (afkRole) await victim.roles.add(afkRole); 
-      return "🛡 Moved to AFK"; 
+      return `🛡 Moved to AFK by <@${executor.id}>`;
     },
-    async () => { 
-      const oldName = victim.displayName; 
-      await victim.setNickname("🤡 Punished"); 
-      return `📝 Nickname changed from **${oldName}**`; 
-    },
-    async () => "⚡ Lucky, nothing happened"
+    async () => `⚡ Lucky! <@${executor.id}> spared <@${victim.id}>`
   ];
 
   const action = getRandom(punishments);
@@ -143,18 +170,19 @@ function getRandomTwo(members) {
 // Handle commands
 client.on("interactionCreate", async interaction => {
   if (!interaction.isChatInputCommand()) return;
-  if (!ALLOWED_USERS.includes(interaction.user.id)) return interaction.reply({ content: "❌ You are not authorized.", ephemeral: true });
+  if (!ALLOWED_USERS.includes(interaction.user.id)) 
+    return interaction.reply({ content: "❌ You are not authorized.", ephemeral: true });
 
   await interaction.guild.members.fetch();
   const staffMembers = interaction.guild.members.cache.filter(m => getHighestStaff(m));
   const channel = interaction.channel; // Send roulette results here
-  const staffChannel = interaction.guild.channels.cache.get(STAFF_CHANNEL_ID); // Staff table channel
+  const staffChannel = interaction.guild.channels.cache.get(STAFF_CHANNEL_ID);
 
-  if (!staffMembers.size && interaction.commandName !== "put" && interaction.commandName !== "update") 
+  if (!staffMembers.size && !["put","update"].includes(interaction.commandName))
     return interaction.reply({ content: "❌ No staff members found", ephemeral: true });
 
-  // STAFF TABLE COMMANDS
-  if (interaction.commandName === "put" || interaction.commandName === "update") {
+  // STAFF TABLE
+  if (["put","update"].includes(interaction.commandName)) {
     if (!staffChannel) return interaction.reply({ content: "Staff channel not found", ephemeral: true });
     const embed = buildEmbed(interaction.guild);
     const msgs = await staffChannel.messages.fetch({ limit: 10 });
@@ -164,101 +192,30 @@ client.on("interactionCreate", async interaction => {
     return interaction.reply({ content: "✅ Staff table updated!", ephemeral: true });
   }
 
-  // /roulette
+  // /roulette ban
   if (interaction.commandName === "roulette") {
     const victim = getRandom([...staffMembers.values()]);
-    await victim.ban({ reason: "Ban Roulette" }).catch(() => {});
     const embed = new EmbedBuilder()
       .setTitle("🎰 Ban Roulette")
-      .setDescription(`💀 <@${victim.id}> got banned!`)
+      .setDescription(getRandom(banMessages).replace("{victim}", victim.id))
       .setColor(0xff0000)
       .setTimestamp();
+    await victim.ban({ reason: `Ban Roulette by ${interaction.user.tag}` }).catch(() => {});
     await channel.send({ embeds: [embed] });
-    return interaction.reply({ content: `✅ <@${victim.id}> has been banned!`, ephemeral: true });
-  }
-
-  // /fakeroulette
-  if (interaction.commandName === "fakeroulette") {
-    const victim = getRandom([...staffMembers.values()]);
-    const embed = new EmbedBuilder()
-      .setTitle("🎭 Fake Ban Roulette")
-      .setDescription(`🤡 <@${victim.id}> almost got banned!`)
-      .setColor(0xffff00)
-      .setTimestamp();
-    await channel.send({ embeds: [embed] });
-    return interaction.reply({ content: "✅ Fake roulette ran!", ephemeral: true });
-  }
-
-  // /kickroulette
-  if (interaction.commandName === "kickroulette") {
-    const victim = getRandom([...staffMembers.values()]);
-    await victim.kick("Kick Roulette").catch(() => {});
-    const embed = new EmbedBuilder()
-      .setTitle("🥾 Kick Roulette")
-      .setDescription(`💨 <@${victim.id}> got kicked!`)
-      .setColor(0xff8800)
-      .setTimestamp();
-    await channel.send({ embeds: [embed] });
-    return interaction.reply({ content: `✅ <@${victim.id}> has been kicked!`, ephemeral: true });
+    return interaction.reply({ content: `✅ Ban roulette executed by <@${interaction.user.id}>!`, ephemeral: true });
   }
 
   // /punishroulette
   if (interaction.commandName === "punishroulette") {
     const victim = getRandom([...staffMembers.values()]);
-    const result = await punishMember(victim, interaction.guild);
+    const result = await punishMember(victim, interaction.user, interaction.guild);
     const embed = new EmbedBuilder()
       .setTitle("🎯 Punish Roulette")
-      .setDescription(`💀 <@${victim.id}> got punished: **${result}**`)
+      .setDescription(`💀 Result: **${result}**`)
       .setColor(0x00ff00)
       .setTimestamp();
     await channel.send({ embeds: [embed] });
-    return interaction.reply({ content: "✅ Punish roulette executed!", ephemeral: true });
-  }
-
-  // /impostor
-  if (interaction.commandName === "impostor") {
-    const victim = getRandom([...staffMembers.values()]);
-    const embed = new EmbedBuilder()
-      .setTitle("🚨 Impostor Alert!")
-      .setDescription(`🕵️ <@${victim.id}> is sus!`)
-      .setColor(0xff00ff)
-      .setTimestamp();
-    await channel.send({ embeds: [embed] });
-    return interaction.reply({ content: "✅ Impostor roulette ran!", ephemeral: true });
-  }
-
-  // /luck
-  if (interaction.commandName === "luck") {
-    const luck = Math.floor(Math.random() * 101);
-    const embed = new EmbedBuilder()
-      .setTitle("🍀 Luck Check")
-      .setDescription(`🧠 <@${interaction.user.id}> has ${luck}% luck!`)
-      .setColor(0x00ffff)
-      .setTimestamp();
-    await interaction.reply({ embeds: [embed], ephemeral: true });
-  }
-
-  // /godmode
-  if (interaction.commandName === "godmode") {
-    const target = interaction.options.getUser("target");
-    if (!target) return interaction.reply({ content: "❌ Please specify a user.", ephemeral: true });
-    const embed = new EmbedBuilder()
-      .setTitle("👑 Godmode")
-      .setDescription(`🛡 <@${target.id}> is now IMMUNE to all roulettes!`)
-      .setColor(0x9900ff)
-      .setTimestamp();
-    await interaction.reply({ embeds: [embed], ephemeral: true });
-  }
-
-  // /hallofshame
-  if (interaction.commandName === "hallofshame") {
-    const embed = new EmbedBuilder()
-      .setTitle("📜 Hall of Shame")
-      .setDescription("Last punished staff members")
-      .setColor(0xff5555)
-      .setTimestamp();
-    await channel.send({ embeds: [embed] });
-    return interaction.reply({ content: "✅ Hall of Shame displayed!", ephemeral: true });
+    return interaction.reply({ content: `✅ Punish roulette ran by <@${interaction.user.id}>!`, ephemeral: true });
   }
 
   // /duelroulette
@@ -266,7 +223,7 @@ client.on("interactionCreate", async interaction => {
     const { player1, player2, loser } = await duelMembers([...staffMembers.values()]);
     const embed = new EmbedBuilder()
       .setTitle("⚔️ Duel Roulette")
-      .setDescription(`🎮 <@${player1.id}> vs <@${player2.id}>\n💀 <@${loser.id}> lost and got muted for 5 min!`)
+      .setDescription(`🎮 <@${player1.id}> vs <@${player2.id}>\n💀 <@${loser.id}> lost and got muted for 5 min!\nExecuted by <@${interaction.user.id}>`)
       .setColor(0xffaa00)
       .setTimestamp();
     await channel.send({ embeds: [embed] });
