@@ -1,10 +1,20 @@
-const { Client, GatewayIntentBits, SlashCommandBuilder, REST, Routes, EmbedBuilder, PermissionFlagsBits } = require("discord.js");
+const {
+  Client,
+  GatewayIntentBits,
+  SlashCommandBuilder,
+  REST,
+  Routes,
+  EmbedBuilder,
+  PermissionFlagsBits
+} = require("discord.js");
 
 const TOKEN = process.env.TOKEN;
 const CLIENT_ID = process.env.CLIENT_ID;
 const GUILD_ID = process.env.GUILD_ID;
 
-// 🔐 Allowed users only
+const STAFF_CHANNEL_ID = "1427692088614719628";
+
+// Allowed users
 const ALLOWED_USERS = [
   "1289624661079883791",
   "1387888341109833906",
@@ -13,249 +23,224 @@ const ALLOWED_USERS = [
   "1348065997231489066"
 ];
 
-// Staff detection keywords
-const STAFF_KEYS = [
-  "helper",
-  "mod",
-  "admin",
-  "manager",
-  "head",
-  "owner",
-  "founder"
+// Staff role mapping
+const ROLE_MAP = [
+  { key: "main founder", label: "👑 Main Founder" },
+  { key: "co founder", label: "💜 Founder" },
+  { key: "own┇", label: "🖤 Owner" },
+  { key: "co┇", label: "💙 Co Owner" },
+  { key: "hos┇", label: "🔥 Head of Staff" },
+  { key: "man┇", label: "💎 Manager" },
+  { key: "adm┇", label: "🛡️ Admin" },
+  { key: "mod┇", label: "⚔️ Moderator" },
+  { key: "hel┇", label: "🌟 Helper" }
 ];
 
 const client = new Client({
-  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers]
+  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers, GatewayIntentBits.GuildModeration]
 });
 
-// Fun messages for roulette
-const FUNNY_VERDICTS = [
-  "💀 RNG said goodbye",
-  "🎰 Spin landed on BAN",
-  "⚡ Executed by the council",
-  "🔥 Skill issue detected",
-  "☠️ Massive L detected"
-];
-
-const FAKE_VERDICTS = [
-  "😳 Heart attack avoided",
-  "🧠 Almost banned but luck clutched",
-  "😮‍💨 That was TOO close",
-  "🎭 Plot twist: FAKE SPIN",
-  "🛡 Protected by plot armor",
-  "😂 Chat was ready to mourn"
-];
-
-let CHAOS_MODE = false;
-let HALL_OF_SHAME = [];
-
-// ─── COMMANDS ─────────────────────────────
+// Register slash commands
 const commands = [
-  new SlashCommandBuilder().setName("roulette").setDescription("🎰 Ban roulette (REAL)"),
-  new SlashCommandBuilder().setName("fakeroulette").setDescription("🎭 Fake roulette"),
-  new SlashCommandBuilder().setName("kickroulette").setDescription("🥾 Kick roulette"),
-  new SlashCommandBuilder().setName("punishroulette").setDescription("🎯 Punishment roulette"),
-  new SlashCommandBuilder().setName("impostor").setDescription("🎭 Impostor roulette"),
-  new SlashCommandBuilder().setName("luck").setDescription("🧠 Check your luck"),
-  new SlashCommandBuilder().setName("godmode").setDescription("👑 Make someone immune").addUserOption(o => o.setName("user").setDescription("User to godmode")),
-  new SlashCommandBuilder().setName("hallofshame").setDescription("📜 Show recent roulette victims"),
-  new SlashCommandBuilder().setName("duelroulette").setDescription("🎮 1v1 roulette"),
-  new SlashCommandBuilder().setName("chaos").setDescription("🧨 Toggle chaos mode").addStringOption(o => o.setName("state").setDescription("on/off").setRequired(true)),
-  new SlashCommandBuilder().setName("snitch").setDescription("🕵️ Check snitch chance").addUserOption(o => o.setName("user").setDescription("User to check")),
-  new SlashCommandBuilder().setName("staffstats").setDescription("🏆 Show staff stats"),
-  new SlashCommandBuilder().setName("goat").setDescription("🐐 GOAT detector").addUserOption(o => o.setName("user").setDescription("User to check"))
+  new SlashCommandBuilder().setName("roulette").setDescription("Ban a random staff member"),
+  new SlashCommandBuilder().setName("fakeroulette").setDescription("Fake ban a staff member"),
+  new SlashCommandBuilder().setName("kickroulette").setDescription("Kick a random staff member"),
+  new SlashCommandBuilder().setName("punishroulette").setDescription("Randomly punish a staff member"),
+  new SlashCommandBuilder().setName("impostor").setDescription("Fake impostor alert"),
+  new SlashCommandBuilder().setName("luck").setDescription("Check your luck %"),
+  new SlashCommandBuilder().setName("godmode").setDescription("Make a user immune").addUserOption(opt => opt.setName("target").setDescription("Target user")),
+  new SlashCommandBuilder().setName("hallofshame").setDescription("Shows last punished staff"),
+  new SlashCommandBuilder().setName("duelroulette").setDescription("Random 1v1 duel")
 ].map(c => c.toJSON());
 
-// ─── REGISTER COMMANDS ─────────────────────
 const rest = new REST({ version: "10" }).setToken(TOKEN);
 (async () => {
-  try {
-    await rest.put(Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID), { body: commands });
-    console.log("✅ All commands registered");
-  } catch (err) { console.error(err); }
+  await rest.put(Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID), { body: commands });
 })();
 
-// ─── HELPERS ───────────────────────────────
-function isStaff(member) {
-  return member.roles.cache.some(r => STAFF_KEYS.some(k => r.name.toLowerCase().includes(k)));
-}
-
-function randomItem(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
-
-function permissionCheck(interaction) {
-  if (!ALLOWED_USERS.includes(interaction.user.id)) {
-    interaction.reply({ content: "❌ You are not authorized.", ephemeral: true });
-    return false;
+// Get highest staff role
+function getHighestStaff(member) {
+  for (const roleDef of ROLE_MAP) {
+    const role = member.roles.cache.find(r => r.name.toLowerCase().includes(roleDef.key));
+    if (role) return roleDef;
   }
-  return true;
+  return null;
 }
 
-// ─── INTERACTION HANDLER ───────────────────
+// Build staff embed
+function buildEmbed(guild) {
+  const embed = new EmbedBuilder()
+    .setTitle("📜 Staff Team")
+    .setColor(0x5865f2)
+    .setTimestamp();
+
+  ROLE_MAP.forEach(roleDef => {
+    const role = guild.roles.cache.find(r => r.name.toLowerCase().includes(roleDef.key));
+    if (!role) return;
+
+    const members = guild.members.cache.filter(m => {
+      const highest = getHighestStaff(m);
+      return highest && highest.key === roleDef.key;
+    });
+
+    if (!members.size) return;
+
+    embed.addFields({
+      name: `${roleDef.label} — ${role.name}`,
+      value: members.map(m => `• <@${m.id}>`).join("\n"),
+      inline: false
+    });
+  });
+
+  return embed;
+}
+
+// Random helper functions
+function getRandom(array) {
+  return array[Math.floor(Math.random() * array.length)];
+}
+
+// Punish roulette
+async function punishMember(member) {
+  const punishments = [
+    async () => { await member.timeout(5 * 60 * 1000, "Punish Roulette"); return "⏱ Timed out 5 minutes"; },
+    async () => { const afkRole = member.guild.roles.cache.find(r => r.name.toLowerCase().includes("afk")); if (afkRole) await member.roles.add(afkRole); return "🛡 Moved to AFK"; },
+    async () => { const oldName = member.displayName; await member.setNickname("🤡 Punished"); return `📝 Nickname changed from ${oldName}`; },
+    async () => "⚡ Lucky, nothing happened"
+  ];
+
+  const action = getRandom(punishments);
+  const result = await action();
+  return result;
+}
+
+// Duel roulette
+async function duelMembers(members) {
+  const [player1, player2] = members.sort(() => 0.5 - Math.random()).slice(0, 2);
+  const loser = getRandom([player1, player2]);
+  await loser.timeout(5 * 60 * 1000, "Duel Roulette"); // Mute loser 5 min
+  return { player1, player2, loser };
+}
+
+// Handle commands
 client.on("interactionCreate", async interaction => {
   if (!interaction.isChatInputCommand()) return;
-  if (!permissionCheck(interaction)) return;
+  if (!ALLOWED_USERS.includes(interaction.user.id)) return interaction.reply({ content: "❌ You are not authorized.", ephemeral: true });
 
   await interaction.guild.members.fetch();
-  const staffMembers = interaction.guild.members.cache.filter(m => !m.user.bot && isStaff(m));
-  if (!staffMembers.size) return interaction.reply({ content: "❌ No staff members found.", ephemeral: true });
 
-  const command = interaction.commandName;
+  const staffMembers = interaction.guild.members.cache.filter(m => getHighestStaff(m));
+  if (!staffMembers.size) return interaction.reply({ content: "❌ No staff members found", ephemeral: true });
 
-  // Random staff target
-  const victim = randomItem([...staffMembers.values()]);
+  const channel = interaction.guild.channels.cache.get(STAFF_CHANNEL_ID);
+  if (!channel) return interaction.reply({ content: "❌ Staff channel not found", ephemeral: true });
 
-  switch (command) {
-
-    case "roulette":
-      {
-        const verdict = randomItem(FUNNY_VERDICTS);
-        const embed = new EmbedBuilder()
-          .setTitle("🎰 BAN ROULETTE")
-          .setColor(0xff0000)
-          .setDescription(`🎯 **Selected:** ${victim}\n📜 **Verdict:** ${verdict}`)
-          .setTimestamp();
-        await interaction.reply({ embeds: [embed] });
-        HALL_OF_SHAME.push({ user: victim.user.tag, type: "BAN", time: new Date() });
-        setTimeout(async () => { try { await victim.ban({ reason: "Ban Roulette" }); } catch {} }, 2000);
-      } break;
-
-    case "fakeroulette":
-      {
-        const verdict = randomItem(FAKE_VERDICTS);
-        const embed = new EmbedBuilder()
-          .setTitle("🎭 FAKE ROULETTE")
-          .setColor(0x5865f2)
-          .setDescription(`🎯 **Selected:** ${victim}\n📜 **Verdict:** ${verdict}`)
-          .setFooter({ text: "This was a prank 😭" })
-          .setTimestamp();
-        await interaction.reply({ embeds: [embed] });
-      } break;
-
-    case "kickroulette":
-      {
-        const embed = new EmbedBuilder()
-          .setTitle("🥾 KICK ROULETTE")
-          .setColor(0xffa500)
-          .setDescription(`🎯 **Victim:** ${victim}\n💨 Outcome: **KICKED**`)
-          .setTimestamp();
-        await interaction.reply({ embeds: [embed] });
-        HALL_OF_SHAME.push({ user: victim.user.tag, type: "KICK", time: new Date() });
-        setTimeout(async () => { try { await victim.kick("Kick Roulette 🥾"); } catch {} }, 2000);
-      } break;
-
-    case "punishroulette":
-      {
-        const punishments = ["Timeout 5 min", "Timeout 10 min", "Nickname change", "Move to AFK", "Nothing"];
-        const result = randomItem(punishments);
-        const embed = new EmbedBuilder()
-          .setTitle("🎯 PUNISHMENT ROULETTE")
-          .setColor(0xffff00)
-          .setDescription(`🎯 **Selected:** ${victim}\n📜 **Punishment:** ${result}`)
-          .setTimestamp();
-        await interaction.reply({ embeds: [embed] });
-      } break;
-
-    case "impostor":
-      {
-        const embed = new EmbedBuilder()
-          .setTitle("🎭 IMPOSTOR ALERT")
-          .setColor(0xff00ff)
-          .setDescription(`🚨 **Accused:** ${victim}\n🕵️‍♂️ Reason: Suspected betrayal\n📜 Verdict: FALSE ALARM!`)
-          .setTimestamp();
-        await interaction.reply({ embeds: [embed] });
-      } break;
-
-    case "luck":
-      {
-        const luck = Math.floor(Math.random() * 101);
-        const embed = new EmbedBuilder()
-          .setTitle("🧠 LUCK CHECK")
-          .setColor(0x00ff00)
-          .setDescription(`🎲 **${interaction.user.username}** Luck: **${luck}%**`)
-          .setTimestamp();
-        await interaction.reply({ embeds: [embed] });
-      } break;
-
-    case "godmode":
-      {
-        const user = interaction.options.getUser("user");
-        const embed = new EmbedBuilder()
-          .setTitle("👑 GODMODE")
-          .setColor(0x00ffff)
-          .setDescription(`🔱 **${user.username}** is now IMMUNE to roulette!`)
-          .setTimestamp();
-        await interaction.reply({ embeds: [embed] });
-      } break;
-
-    case "hallofshame":
-      {
-        if (!HALL_OF_SHAME.length) return interaction.reply("📜 Hall of shame is empty.");
-        const list = HALL_OF_SHAME.slice(-10).map(x => `• ${x.user} → ${x.type}`).join("\n");
-        const embed = new EmbedBuilder()
-          .setTitle("📜 HALL OF SHAME")
-          .setColor(0xff0000)
-          .setDescription(list)
-          .setTimestamp();
-        await interaction.reply({ embeds: [embed] });
-      } break;
-
-    case "duelroulette":
-      {
-        const [p1, p2] = [...staffMembers.values()].sort(() => 0.5 - Math.random()).slice(0,2);
-        const loser = randomItem([p1, p2]);
-        const embed = new EmbedBuilder()
-          .setTitle("🎮 1v1 DUEL ROULETTE")
-          .setColor(0xff69b4)
-          .setDescription(`🎯 Duel between ${p1} and ${p2}\n💀 Loser: ${loser}`)
-          .setTimestamp();
-        await interaction.reply({ embeds: [embed] });
-      } break;
-
-    case "chaos":
-      {
-        const state = interaction.options.getString("state").toLowerCase();
-        if (state === "on") { CHAOS_MODE = true; await interaction.reply("🔥 Chaos mode is ON!"); }
-        else { CHAOS_MODE = false; await interaction.reply("🛡 Chaos mode is OFF!"); }
-      } break;
-
-    case "snitch":
-      {
-        const user = interaction.options.getUser("user");
-        const chance = Math.floor(Math.random() * 101);
-        const embed = new EmbedBuilder()
-          .setTitle("🕵️ SNITCH DETECTOR")
-          .setColor(0xffa500)
-          .setDescription(`🎯 **${user.username}** Snitch chance: **${chance}%**`)
-          .setTimestamp();
-        await interaction.reply({ embeds: [embed] });
-      } break;
-
-    case "staffstats":
-      {
-        const total = staffMembers.size;
-        const embed = new EmbedBuilder()
-          .setTitle("🏆 STAFF STATS")
-          .setColor(0x00ffff)
-          .setDescription(`👥 Total Staff: ${total}\n⚡ Chaos Mode: ${CHAOS_MODE ? "ON" : "OFF"}`)
-          .setTimestamp();
-        await interaction.reply({ embeds: [embed] });
-      } break;
-
-    case "goat":
-      {
-        const user = interaction.options.getUser("user");
-        const aura = Math.floor(Math.random()*101);
-        const clutch = Math.floor(Math.random()*101);
-        const npc = Math.floor(Math.random()*101);
-        const total = Math.floor((aura + clutch + npc)/3);
-        const embed = new EmbedBuilder()
-          .setTitle("🐐 GOAT DETECTOR")
-          .setColor(0xffd700)
-          .setDescription(`🎯 **${user.username}** stats:\n• Aura: ${aura}\n• Clutch: ${clutch}\n• NPC Energy: ${npc}\n🏆 Total GOAT: ${total}`)
-          .setTimestamp();
-        await interaction.reply({ embeds: [embed] });
-      } break;
+  if (interaction.commandName === "roulette") {
+    const victim = getRandom([...staffMembers.values()]);
+    await victim.ban({ reason: "Ban Roulette" }).catch(() => {});
+    const embed = new EmbedBuilder()
+      .setTitle("🎰 Ban Roulette")
+      .setDescription(`💀 <@${victim.id}> got banned!`)
+      .setColor(0xff0000)
+      .setTimestamp();
+    await channel.send({ embeds: [embed] });
+    return interaction.reply({ content: `✅ <@${victim.id}> has been banned!`, ephemeral: true });
   }
+
+  if (interaction.commandName === "fakeroulette") {
+    const victim = getRandom([...staffMembers.values()]);
+    const embed = new EmbedBuilder()
+      .setTitle("🎭 Fake Ban Roulette")
+      .setDescription(`🤡 <@${victim.id}> almost got banned!`)
+      .setColor(0xffff00)
+      .setTimestamp();
+    await channel.send({ embeds: [embed] });
+    return interaction.reply({ content: "✅ Fake roulette ran!", ephemeral: true });
+  }
+
+  if (interaction.commandName === "kickroulette") {
+    const victim = getRandom([...staffMembers.values()]);
+    await victim.kick("Kick Roulette").catch(() => {});
+    const embed = new EmbedBuilder()
+      .setTitle("🥾 Kick Roulette")
+      .setDescription(`💨 <@${victim.id}> got kicked!`)
+      .setColor(0xff8800)
+      .setTimestamp();
+    await channel.send({ embeds: [embed] });
+    return interaction.reply({ content: `✅ <@${victim.id}> has been kicked!`, ephemeral: true });
+  }
+
+  if (interaction.commandName === "punishroulette") {
+    const victim = getRandom([...staffMembers.values()]);
+    const result = await punishMember(victim);
+    const embed = new EmbedBuilder()
+      .setTitle("🎯 Punish Roulette")
+      .setDescription(`💀 <@${victim.id}> punishment: ${result}`)
+      .setColor(0x00ff00)
+      .setTimestamp();
+    await channel.send({ embeds: [embed] });
+    return interaction.reply({ content: "✅ Punish roulette ran!", ephemeral: true });
+  }
+
+  if (interaction.commandName === "impostor") {
+    const victim = getRandom([...staffMembers.values()]);
+    const embed = new EmbedBuilder()
+      .setTitle("🚨 Impostor Alert!")
+      .setDescription(`🕵️ <@${victim.id}> is sus!`)
+      .setColor(0xff00ff)
+      .setTimestamp();
+    await channel.send({ embeds: [embed] });
+    return interaction.reply({ content: "✅ Impostor roulette ran!", ephemeral: true });
+  }
+
+  if (interaction.commandName === "luck") {
+    const luck = Math.floor(Math.random() * 101);
+    const embed = new EmbedBuilder()
+      .setTitle("🍀 Luck Check")
+      .setDescription(`🧠 <@${interaction.user.id}> has ${luck}% luck!`)
+      .setColor(0x00ffff)
+      .setTimestamp();
+    await interaction.reply({ embeds: [embed], ephemeral: true });
+  }
+
+  if (interaction.commandName === "godmode") {
+    const target = interaction.options.getUser("target");
+    if (!target) return interaction.reply({ content: "❌ Please specify a user.", ephemeral: true });
+    const embed = new EmbedBuilder()
+      .setTitle("👑 Godmode")
+      .setDescription(`🛡 <@${target.id}> is now IMMUNE to all roulettes!`)
+      .setColor(0x9900ff)
+      .setTimestamp();
+    await interaction.reply({ embeds: [embed], ephemeral: true });
+  }
+
+  if (interaction.commandName === "hallofshame") {
+    const embed = new EmbedBuilder()
+      .setTitle("📜 Hall of Shame")
+      .setDescription("Last punished staff members")
+      .setColor(0xff5555)
+      .setTimestamp();
+    await channel.send({ embeds: [embed] });
+    return interaction.reply({ content: "✅ Hall of Shame displayed!", ephemeral: true });
+  }
+
+  if (interaction.commandName === "duelroulette") {
+    const { player1, player2, loser } = await duelMembers([...staffMembers.values()]);
+    const embed = new EmbedBuilder()
+      .setTitle("⚔️ Duel Roulette")
+      .setDescription(`🎮 ${player1} vs ${player2}\n💀 <@${loser.id}> lost and got muted for 5 min!`)
+      .setColor(0xffaa00)
+      .setTimestamp();
+    await channel.send({ embeds: [embed] });
+    return interaction.reply({ content: "✅ Duel roulette ran!", ephemeral: true });
+  }
+
+  // Update staff table
+  const embed = buildEmbed(interaction.guild);
+  const msgs = await channel.messages.fetch({ limit: 10 });
+  const old = msgs.find(m => m.author.id === client.user.id);
+  if (old) await old.edit({ embeds: [embed] });
+  else await channel.send({ embeds: [embed] });
 });
 
 client.login(TOKEN);
