@@ -4,8 +4,7 @@ const {
   SlashCommandBuilder,
   REST,
   Routes,
-  EmbedBuilder,
-  PermissionFlagsBits
+  EmbedBuilder
 } = require("discord.js");
 
 const TOKEN = process.env.TOKEN;
@@ -101,11 +100,22 @@ function getRandom(array) {
 }
 
 // Punish roulette
-async function punishMember(member) {
+async function punishMember(victim, guild) {
   const punishments = [
-    async () => { await member.timeout(5 * 60 * 1000, "Punish Roulette"); return "⏱ Timed out 5 minutes"; },
-    async () => { const afkRole = member.guild.roles.cache.find(r => r.name.toLowerCase().includes("afk")); if (afkRole) await member.roles.add(afkRole); return "🛡 Moved to AFK"; },
-    async () => { const oldName = member.displayName; await member.setNickname("🤡 Punished"); return `📝 Nickname changed from ${oldName}`; },
+    async () => { 
+      await victim.timeout(5 * 60 * 1000, "Punish Roulette"); 
+      return "⏱ Timed out 5 minutes"; 
+    },
+    async () => { 
+      const afkRole = guild.roles.cache.find(r => r.name.toLowerCase().includes("afk")); 
+      if (afkRole) await victim.roles.add(afkRole); 
+      return "🛡 Moved to AFK"; 
+    },
+    async () => { 
+      const oldName = victim.displayName; 
+      await victim.setNickname("🤡 Punished"); 
+      return `📝 Nickname changed from **${oldName}**`; 
+    },
     async () => "⚡ Lucky, nothing happened"
   ];
 
@@ -115,11 +125,17 @@ async function punishMember(member) {
 }
 
 // Duel roulette
-async function duelMembers(members) {
-  const [player1, player2] = members.sort(() => 0.5 - Math.random()).slice(0, 2);
+async function duelMembers(staffMembers) {
+  const [player1, player2] = getRandomTwo(staffMembers);
   const loser = getRandom([player1, player2]);
   await loser.timeout(5 * 60 * 1000, "Duel Roulette"); // Mute loser 5 min
   return { player1, player2, loser };
+}
+
+// Helper: pick 2 random members
+function getRandomTwo(members) {
+  const shuffled = [...members].sort(() => 0.5 - Math.random());
+  return shuffled.slice(0, 2);
 }
 
 // Handle commands
@@ -128,13 +144,13 @@ client.on("interactionCreate", async interaction => {
   if (!ALLOWED_USERS.includes(interaction.user.id)) return interaction.reply({ content: "❌ You are not authorized.", ephemeral: true });
 
   await interaction.guild.members.fetch();
-
   const staffMembers = interaction.guild.members.cache.filter(m => getHighestStaff(m));
   if (!staffMembers.size) return interaction.reply({ content: "❌ No staff members found", ephemeral: true });
 
   const channel = interaction.guild.channels.cache.get(STAFF_CHANNEL_ID);
   if (!channel) return interaction.reply({ content: "❌ Staff channel not found", ephemeral: true });
 
+  // /roulette
   if (interaction.commandName === "roulette") {
     const victim = getRandom([...staffMembers.values()]);
     await victim.ban({ reason: "Ban Roulette" }).catch(() => {});
@@ -147,6 +163,7 @@ client.on("interactionCreate", async interaction => {
     return interaction.reply({ content: `✅ <@${victim.id}> has been banned!`, ephemeral: true });
   }
 
+  // /fakeroulette
   if (interaction.commandName === "fakeroulette") {
     const victim = getRandom([...staffMembers.values()]);
     const embed = new EmbedBuilder()
@@ -158,6 +175,7 @@ client.on("interactionCreate", async interaction => {
     return interaction.reply({ content: "✅ Fake roulette ran!", ephemeral: true });
   }
 
+  // /kickroulette
   if (interaction.commandName === "kickroulette") {
     const victim = getRandom([...staffMembers.values()]);
     await victim.kick("Kick Roulette").catch(() => {});
@@ -170,18 +188,20 @@ client.on("interactionCreate", async interaction => {
     return interaction.reply({ content: `✅ <@${victim.id}> has been kicked!`, ephemeral: true });
   }
 
+  // /punishroulette
   if (interaction.commandName === "punishroulette") {
     const victim = getRandom([...staffMembers.values()]);
-    const result = await punishMember(victim);
+    const result = await punishMember(victim, interaction.guild);
     const embed = new EmbedBuilder()
       .setTitle("🎯 Punish Roulette")
-      .setDescription(`💀 <@${victim.id}> punishment: ${result}`)
+      .setDescription(`💀 <@${victim.id}> got punished: **${result}**`)
       .setColor(0x00ff00)
       .setTimestamp();
     await channel.send({ embeds: [embed] });
-    return interaction.reply({ content: "✅ Punish roulette ran!", ephemeral: true });
+    return interaction.reply({ content: "✅ Punish roulette executed!", ephemeral: true });
   }
 
+  // /impostor
   if (interaction.commandName === "impostor") {
     const victim = getRandom([...staffMembers.values()]);
     const embed = new EmbedBuilder()
@@ -193,6 +213,7 @@ client.on("interactionCreate", async interaction => {
     return interaction.reply({ content: "✅ Impostor roulette ran!", ephemeral: true });
   }
 
+  // /luck
   if (interaction.commandName === "luck") {
     const luck = Math.floor(Math.random() * 101);
     const embed = new EmbedBuilder()
@@ -203,6 +224,7 @@ client.on("interactionCreate", async interaction => {
     await interaction.reply({ embeds: [embed], ephemeral: true });
   }
 
+  // /godmode
   if (interaction.commandName === "godmode") {
     const target = interaction.options.getUser("target");
     if (!target) return interaction.reply({ content: "❌ Please specify a user.", ephemeral: true });
@@ -214,6 +236,7 @@ client.on("interactionCreate", async interaction => {
     await interaction.reply({ embeds: [embed], ephemeral: true });
   }
 
+  // /hallofshame
   if (interaction.commandName === "hallofshame") {
     const embed = new EmbedBuilder()
       .setTitle("📜 Hall of Shame")
@@ -224,6 +247,7 @@ client.on("interactionCreate", async interaction => {
     return interaction.reply({ content: "✅ Hall of Shame displayed!", ephemeral: true });
   }
 
+  // /duelroulette
   if (interaction.commandName === "duelroulette") {
     const { player1, player2, loser } = await duelMembers([...staffMembers.values()]);
     const embed = new EmbedBuilder()
