@@ -14,6 +14,19 @@ const client = new Client({
   ]
 });
 
+/* =========================
+   🔐 ALLOWED USERS
+   ========================= */
+const ALLOWED_USERS = [
+  "1289624661079883791",
+  "1387888341109833906",
+  "1171474569299755158",
+  "1388979737174478940"
+];
+
+/* =========================
+   👔 STAFF ROLE DETECTION
+   ========================= */
 const STAFF_KEYWORDS = [
   "help",
   "mod",
@@ -25,9 +38,26 @@ const STAFF_KEYWORDS = [
   "founder"
 ];
 
+/* =========================
+   😂 FUNNY VERDICTS
+   ========================= */
+const FUNNY_MESSAGES = [
+  "💀 Wheel decided your fate",
+  "😭 Shouldn’t have logged in today",
+  "🧳 Bro got promoted to exile",
+  "🚪 Escorting you out respectfully",
+  "🫡 Thank you for your service… goodbye",
+  "🎯 RNG said YOU",
+  "📉 Career ended instantly",
+  "💣 Critical hit. Server wins."
+];
+
+/* =========================
+   🎰 SLASH COMMAND
+   ========================= */
 const command = new SlashCommandBuilder()
   .setName("roulette")
-  .setDescription("🎰 Ban a random staff member (DANGEROUS)");
+  .setDescription("🎰 Spin the wheel and ban a random staff member");
 
 client.once("ready", async () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
@@ -39,58 +69,78 @@ client.once("ready", async () => {
     { body: [command.toJSON()] }
   );
 
-  console.log("✅ Slash command registered");
+  console.log("✅ /roulette registered");
 });
 
+/* =========================
+   🎯 INTERACTION HANDLER
+   ========================= */
 client.on("interactionCreate", async interaction => {
   if (!interaction.isChatInputCommand()) return;
   if (interaction.commandName !== "roulette") return;
+
+  /* 🔐 ACCESS CHECK */
+  if (!ALLOWED_USERS.includes(interaction.user.id)) {
+    return interaction.reply({
+      content: "⛔ You are NOT authorized to spin the wheel.",
+      ephemeral: true
+    });
+  }
 
   await interaction.deferReply();
 
   const guild = interaction.guild;
   await guild.members.fetch();
 
-  // Detect staff roles by NAME
+  /* 👔 STAFF ROLES */
   const staffRoles = guild.roles.cache.filter(role =>
-    STAFF_KEYWORDS.some(keyword =>
-      role.name.toLowerCase().includes(keyword)
+    STAFF_KEYWORDS.some(k =>
+      role.name.toLowerCase().includes(k)
     )
   );
 
-  if (staffRoles.size === 0) {
+  if (!staffRoles.size) {
     return interaction.editReply("❌ No staff roles detected.");
   }
 
-  // Get staff members
+  /* 👤 STAFF MEMBERS */
   const staffMembers = guild.members.cache.filter(member =>
-    member.roles.cache.some(role => staffRoles.has(role.id)) &&
+    member.roles.cache.some(r => staffRoles.has(r.id)) &&
     member.bannable &&
     !member.user.bot
   );
 
-  if (staffMembers.size === 0) {
+  if (!staffMembers.size) {
     return interaction.editReply("❌ No bannable staff members found.");
   }
 
-  // Pick random victim
+  /* 🎲 RANDOM PICK */
   const victim = staffMembers.random();
+  const verdict =
+    FUNNY_MESSAGES[Math.floor(Math.random() * FUNNY_MESSAGES.length)];
 
-  // Ban the victim
+  /* 🔨 BAN */
   await victim.ban({ reason: "🎰 Ban Roulette" });
 
-  // Create embed (THE TABLE THING 😎)
+  /* 📦 STYLED EMBED */
   const embed = new EmbedBuilder()
-    .setTitle("🎰 BAN ROULETTE RESULT")
-    .setColor(0xff0000)
-    .setThumbnail(victim.user.displayAvatarURL())
+    .setColor(0xFF3B3B)
+    .setAuthor({
+      name: "BAN ROULETTE",
+      iconURL: guild.iconURL()
+    })
+    .setThumbnail(victim.user.displayAvatarURL({ dynamic: true }))
+    .setDescription("🎰 **The wheel has spoken…**")
     .addFields(
-      { name: "🎯 Victim", value: `${victim.user}`, inline: true },
-      { name: "💼 Role", value: victim.roles.highest.name, inline: true },
-      { name: "💀 Status", value: "BANNED", inline: true },
-      { name: "🔥 Message", value: "The wheel has spoken. No mercy." }
+      { name: "👤 Victim", value: `${victim.user}`, inline: true },
+      { name: "🛡 Highest Role", value: victim.roles.highest.name, inline: true },
+      { name: "🔨 Punishment", value: "PERMANENT BAN", inline: true },
+      { name: "😂 Verdict", value: verdict }
     )
-    .setFooter({ text: "Ban Roulette • Good luck next time" })
+    .setFooter({
+      text: `Spun by ${interaction.user.username}`,
+      iconURL: interaction.user.displayAvatarURL()
+    })
     .setTimestamp();
 
   await interaction.editReply({ embeds: [embed] });
