@@ -1,10 +1,10 @@
-const { 
-  Client, 
-  GatewayIntentBits, 
-  SlashCommandBuilder, 
-  REST, 
-  Routes, 
-  PermissionFlagsBits 
+const {
+  Client,
+  GatewayIntentBits,
+  SlashCommandBuilder,
+  REST,
+  Routes,
+  EmbedBuilder
 } = require("discord.js");
 
 const client = new Client({
@@ -27,7 +27,7 @@ const STAFF_KEYWORDS = [
 
 const command = new SlashCommandBuilder()
   .setName("roulette")
-  .setDescription("🎰 Ban a random staff member (RISKY)");
+  .setDescription("🎰 Ban a random staff member (DANGEROUS)");
 
 client.once("ready", async () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
@@ -51,7 +51,7 @@ client.on("interactionCreate", async interaction => {
   const guild = interaction.guild;
   await guild.members.fetch();
 
-  // 1️⃣ Find staff roles by NAME
+  // Detect staff roles by NAME
   const staffRoles = guild.roles.cache.filter(role =>
     STAFF_KEYWORDS.some(keyword =>
       role.name.toLowerCase().includes(keyword)
@@ -62,7 +62,7 @@ client.on("interactionCreate", async interaction => {
     return interaction.editReply("❌ No staff roles detected.");
   }
 
-  // 2️⃣ Get members with those roles
+  // Get staff members
   const staffMembers = guild.members.cache.filter(member =>
     member.roles.cache.some(role => staffRoles.has(role.id)) &&
     member.bannable &&
@@ -73,25 +73,27 @@ client.on("interactionCreate", async interaction => {
     return interaction.editReply("❌ No bannable staff members found.");
   }
 
-  // 3️⃣ Pick random victim
+  // Pick random victim
   const victim = staffMembers.random();
 
-  // 4️⃣ Funny messages
-  const messages = [
-    `🎰 **BAN ROULETTE SPINNING...**`,
-    `💀 The wheel stopped.`,
-    `😈 **${victim.user.tag}** got absolutely COOKED.`,
-    `🪦 Rest in peace.`,
-    `🔥 Better luck next server.`
-  ];
-
-  // 5️⃣ Ban
+  // Ban the victim
   await victim.ban({ reason: "🎰 Ban Roulette" });
 
-  // 6️⃣ Reply
-  await interaction.editReply(
-    `${messages.join("\n")}\n\n💥 **BANNED:** ${victim.user}`
-  );
+  // Create embed (THE TABLE THING 😎)
+  const embed = new EmbedBuilder()
+    .setTitle("🎰 BAN ROULETTE RESULT")
+    .setColor(0xff0000)
+    .setThumbnail(victim.user.displayAvatarURL())
+    .addFields(
+      { name: "🎯 Victim", value: `${victim.user}`, inline: true },
+      { name: "💼 Role", value: victim.roles.highest.name, inline: true },
+      { name: "💀 Status", value: "BANNED", inline: true },
+      { name: "🔥 Message", value: "The wheel has spoken. No mercy." }
+    )
+    .setFooter({ text: "Ban Roulette • Good luck next time" })
+    .setTimestamp();
+
+  await interaction.editReply({ embeds: [embed] });
 });
 
 client.login(process.env.TOKEN);
